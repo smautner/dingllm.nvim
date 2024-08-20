@@ -91,6 +91,28 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
   return args
 end
 
+function M.make_gemini_spec_curl_args(opts, prompt, system_prompt)
+  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+  local url = opts.url .. "/" .. opts.model .. ":generateContent?key=" .. api_key
+
+  local data = {
+    contents = {
+      {
+        parts = { { text = system_prompt } },
+        role = "model",
+      },
+      {
+        parts = { { text = prompt } },
+        role = "user",
+      },
+    },
+  }
+
+  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+  table.insert(args, url)
+  return args
+end
+
 function M.write_string_at_extmark(str, extmark_id)
   vim.schedule(function()
     local extmark = vim.api.nvim_buf_get_extmark_by_id(0, ns_id, extmark_id, { details = false })
@@ -142,6 +164,16 @@ function M.handle_openai_spec_data(data_stream, extmark_id)
   end
 end
 
+function M.handle_gemini_spec_data(json_str, extmark_id)
+  local json = vim.json.decode(json_str)
+  if json.candidates and json.candidates[1].content.parts[1].text then
+    local content = json.candidates[1].content.parts[1].text
+    if content then
+      M.write_string_at_extmark(content, extmark_id)
+    end
+  end
+end
+
 local group = vim.api.nvim_create_augroup('DING_LLM_AutoGroup', { clear = true })
 local active_job = nil
 
@@ -178,7 +210,14 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
       parse_and_call(out)
     end,
     on_stderr = function(_, _) end,
-    on_exit = function()
+    on_exit = function(j, return_val)
+      if return_val ~= 0 then
+          print("dingllm: Curl command failed with code:", return_val)
+      end
+
+      local json_string = table.concat(j:result())
+      local data_str = "data: " .. json_string
+      parse_and_call(data_str)
       active_job = nil
     end,
   }
