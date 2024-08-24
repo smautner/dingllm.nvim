@@ -164,6 +164,18 @@ function M.handle_openai_spec_data(data_stream, extmark_id)
   end
 end
 
+-- function M.handle_groq_spec_data(data_stream, extmark_id)
+--   if data_stream:match '"choices":' then
+--     local json = vim.json.decode(data_stream)
+--     if json.choices and json.choices[0] and json.choices[0].delta then
+--       local content = json.choices[0].delta.content
+--       if content then
+--         M.write_string_at_extmark(content, extmark_id)
+--       end
+--     end
+--   end
+-- end
+
 function M.handle_gemini_spec_data(json_str, extmark_id)
   local json = vim.json.decode(json_str)
   if json.candidates and json.candidates[1].content.parts[1].text then
@@ -203,19 +215,44 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
     active_job = nil
   end
 
+  -- -- Write the full curl command to a debug log file
+  -- local curl_command = table.concat({'curl', unpack(args)}, ' ')
+  -- local debug_file = io.open('/tmp/dingllm_debug.log', 'a')
+  -- debug_file:write(curl_command .. '\n')
+  -- debug_file:close()
+
   active_job = Job:new {
     command = 'curl',
     args = args,
     on_stdout = function(_, out)
       parse_and_call(out)
+      -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
+      -- debug_file:write('\nRESPONSE stdout: ' .. out .. '\n')
+      -- debug_file:close()
     end,
-    on_stderr = function(_, _) end,
+    on_stderr = function(_, err)
+      -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
+      -- debug_file:write('\nSTDERR: ' .. err .. '\n')
+      -- debug_file:close()
+    end,
     on_exit = function(j, return_val)
       if return_val ~= 0 then
           print("dingllm: Curl command failed with code:", return_val)
+          -- print("dingllm: Curl command was:", table.concat({'curl', unpack(args)}, ' '))
+          --
+          -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
+          -- if debug_file then
+          --   debug_file:write('\nCurl FAILED\n')
+          --   debug_file:close()
+          -- end
       end
 
       local json_string = table.concat(j:result())
+
+      -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
+      -- debug_file:write('\nRESPONSE json: ' .. json_string .. '\n')
+      -- debug_file:close()
+
       local data_str = "data: " .. json_string
       parse_and_call(data_str)
       active_job = nil
