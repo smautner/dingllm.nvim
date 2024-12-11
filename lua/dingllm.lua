@@ -176,6 +176,7 @@ end
 --   end
 -- end
 
+-- https://ai.google.dev/api/generate-content#v1beta.models.generateContent
 function M.handle_gemini_spec_data(json_str, extmark_id)
   local json = vim.json.decode(json_str)
   if json.candidates and json.candidates[1].content.parts[1].text then
@@ -188,6 +189,18 @@ end
 
 local group = vim.api.nvim_create_augroup('DING_LLM_AutoGroup', { clear = true })
 local active_job = nil
+
+local function debug_write(opts, message)
+  if opts.debug and opts.debug_path then
+    local debug_file = io.open(opts.debug_path, 'a')
+    if debug_file then
+      debug_file:write(message .. '\n')
+      debug_file:close()
+    else
+      print("Error: Could not open debug log file at path: " .. opts.debug_path)
+    end
+  end
+end
 
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
   vim.api.nvim_clear_autocmds { group = group }
@@ -215,43 +228,28 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
     active_job = nil
   end
 
-  -- -- Write the full curl command to a debug log file
-  -- local curl_command = table.concat({'curl', unpack(args)}, ' ')
-  -- local debug_file = io.open('/tmp/dingllm_debug.log', 'a')
-  -- debug_file:write(curl_command .. '\n')
-  -- debug_file:close()
+  -- Write the full curl command to a debug log file if enabled
+  local curl_command = table.concat({'curl', unpack(args)}, ' ')
+  debug_write(opts, "REQUEST: " .. curl_command)
 
   active_job = Job:new {
     command = 'curl',
     args = args,
     on_stdout = function(_, out)
       parse_and_call(out)
-      -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
-      -- debug_file:write('\nRESPONSE stdout: ' .. out .. '\n')
-      -- debug_file:close()
+      debug_write(opts, '\nRESPONSE: on_stdout: ' .. out)
     end,
     on_stderr = function(_, err)
-      -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
-      -- debug_file:write('\nSTDERR: ' .. err .. '\n')
-      -- debug_file:close()
+      debug_write(opts, '\nRESPONSE: on_stderr: ' .. err)
     end,
     on_exit = function(j, return_val)
       if return_val ~= 0 then
-          print("dingllm: Curl command failed with code:", return_val)
-          -- print("dingllm: Curl command was:", table.concat({'curl', unpack(args)}, ' '))
-          --
-          -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
-          -- if debug_file then
-          --   debug_file:write('\nCurl FAILED\n')
-          --   debug_file:close()
-          -- end
+        print("RESPONSE on_exit: Curl command failed with code:", return_val)
+        print("RESPONSE on_exit: Curl command was:", table.concat({'curl', unpack(args)}, ' '))
       end
 
       local json_string = table.concat(j:result())
-
-      -- debug_file = io.open('/tmp/dingllm_debug.log', 'a')
-      -- debug_file:write('\nRESPONSE json: ' .. json_string .. '\n')
-      -- debug_file:close()
+      debug_write(opts, '\nRESPONSE json: ' .. json_string)
 
       local data_str = "data: " .. json_string
       parse_and_call(data_str)
