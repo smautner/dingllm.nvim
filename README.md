@@ -3,7 +3,7 @@
 
 My modified version of yacineMTB's [dingllm.nvim](https://github.com/yacineMTB/dingllm.nvim).
 
-https://github.com/yacineMTB/dingllm.nvim/assets/10282244/07cf5ace-7e01-46e3-bd2f-5bec3bb019cc
+
 
 How I use it:
 
