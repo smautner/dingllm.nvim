@@ -93,7 +93,7 @@ end
 
 function M.make_gemini_spec_curl_args(opts, prompt, system_prompt)
   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-  local url = opts.url .. "/" .. opts.model .. ":generateContent?key=" .. api_key
+  local url = opts.url .. "/" .. opts.model .. ":streamGenerateContent?alt=sse&key=" .. api_key
 
   local data = {
     contents = {
@@ -164,25 +164,19 @@ function M.handle_openai_spec_data(data_stream, extmark_id)
   end
 end
 
--- function M.handle_groq_spec_data(data_stream, extmark_id)
---   if data_stream:match '"choices":' then
---     local json = vim.json.decode(data_stream)
---     if json.choices and json.choices[0] and json.choices[0].delta then
---       local content = json.choices[0].delta.content
---       if content then
---         M.write_string_at_extmark(content, extmark_id)
---       end
---     end
---   end
--- end
-
+-- Discrete version:
 -- https://ai.google.dev/api/generate-content#v1beta.models.generateContent
-function M.handle_gemini_spec_data(json_str, extmark_id)
-  local json = vim.json.decode(json_str)
-  if json.candidates and json.candidates[1].content.parts[1].text then
-    local content = json.candidates[1].content.parts[1].text
-    if content then
-      M.write_string_at_extmark(content, extmark_id)
+--
+-- Streaming version:
+-- https://ai.google.dev/api/generate-content#v1beta.models.streamGenerateContent
+function M.handle_gemini_spec_data(data_stream, extmark_id)
+  if data_stream:match '"candidates":' then
+    local json = vim.json.decode(data_stream)
+    if json.candidates and json.candidates[1].content.parts[1].text then
+      local content = json.candidates[1].content.parts[1].text
+      if content then
+        M.write_string_at_extmark(content, extmark_id)
+      end
     end
   end
 end
@@ -211,6 +205,31 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
   local crow, _ = unpack(vim.api.nvim_win_get_cursor(0))
   local stream_end_extmark_id = vim.api.nvim_buf_set_extmark(0, ns_id, crow - 1, -1, {})
 
+
+  -- setup a floating window to show status of LLM request
+  local buf = vim.api.nvim_create_buf(false, true)
+  local width = 20
+  local height = 1
+  local win_opts = {
+    relative = "editor",
+    row = 0,
+    col = vim.o.columns - width,
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    focusable = false,
+  }
+
+  local win = vim.api.nvim_open_win(buf, false, win_opts)
+  vim.api.nvim_win_set_option(win, 'winhl', 'Normal:NormalFloat')
+
+  local function update_floating_window(message)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, true, { message })
+    local message_width = vim.fn.strdisplaywidth(message)
+    vim.api.nvim_win_set_width(win, message_width)
+  end
+
   local function parse_and_call(line)
     local event = line:match '^event: (.+)$'
     if event then
@@ -232,27 +251,40 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
   local curl_command = table.concat({'curl', unpack(args)}, ' ')
   debug_write(opts, "REQUEST: " .. curl_command)
 
+  local start_time = vim.loop.hrtime()
+  update_floating_window("Waiting for LLM...")
+
   active_job = Job:new {
     command = 'curl',
     args = args,
     on_stdout = function(_, out)
+      -- TODO: update status window with token count.
       parse_and_call(out)
       debug_write(opts, '\nRESPONSE: on_stdout: ' .. out)
     end,
     on_stderr = function(_, err)
+      -- TODO: parse the bytes sent / recv to update floating window here.
       debug_write(opts, '\nRESPONSE: on_stderr: ' .. err)
     end,
     on_exit = function(j, return_val)
+      local end_time = vim.loop.hrtime()
+      local elapsed_time_ms = (end_time - start_time) / 1000000
       if return_val ~= 0 then
+        vim.schedule(function()
+            update_floating_window(string.format("Error: %d", return_val))
+        end)
         print("RESPONSE on_exit: Curl command failed with code:", return_val)
-        print("RESPONSE on_exit: Curl command was:", table.concat({'curl', unpack(args)}, ' '))
+      else
+        vim.schedule(function()
+            update_floating_window(string.format("LLM Response took %.2f ms", elapsed_time_ms))
+        end)
+        local json_string = table.concat(j:result())
+        debug_write(opts, '\nRESPONSE full json (retval=' .. return_val .. '): ' .. json_string)
       end
 
-      local json_string = table.concat(j:result())
-      debug_write(opts, '\nRESPONSE json: ' .. json_string)
-
-      local data_str = "data: " .. json_string
-      parse_and_call(data_str)
+      vim.defer_fn(function()
+        vim.api.nvim_win_close(win, true)
+      end, 2750)
       active_job = nil
     end,
   }
@@ -265,7 +297,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
     callback = function()
       if active_job then
         active_job:shutdown()
-        print 'LLM streaming cancelled'
+        print('LLM streaming cancelled!')
+        update_floating_window("LLM streaming cancelled!")
+        vim.defer_fn(function()
+          vim.api.nvim_win_close(win, true)
+        end, 750)
         active_job = nil
       end
     end,
