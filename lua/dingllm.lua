@@ -186,7 +186,8 @@ end
 function M.handle_gemini_spec_data(data_stream, extmark_id)
   if data_stream:match '"candidates":' then
     local json = vim.json.decode(data_stream)
-    if json.candidates and json.candidates[1].content.parts[1].text then
+    if json.candidates and json.candidates[1].content and
+        json.candidates[1].content.parts[1].text then
       local content = json.candidates[1].content.parts[1].text
       if content then
         M.write_string_at_extmark(content, extmark_id)
@@ -284,10 +285,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
       local end_time = vim.loop.hrtime()
       local elapsed_time_ms = (end_time - start_time) / 1000000
       if return_val ~= 0 then
-        vim.schedule(function()
-            update_floating_window(string.format("Error: %d", return_val))
-        end)
-        print("RESPONSE on_exit: Curl command failed with code:", return_val)
+        if return_val ~= nil then
+            vim.schedule(function()
+                update_floating_window(string.format("Error: %s", tostring(return_val)))
+            end)
+        end
       else
         vim.schedule(function()
             update_floating_window(string.format("LLM Response took %.2f ms", elapsed_time_ms))
@@ -297,7 +299,9 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
       end
 
       vim.defer_fn(function()
-        vim.api.nvim_win_close(win, true)
+        if vim.api.nvim_win_is_valid(win) then
+          vim.api.nvim_win_close(win, true)
+        end
       end, 2750)
       active_job = nil
     end,
@@ -311,11 +315,10 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
     callback = function()
       if active_job then
         active_job:shutdown()
-        print('LLM streaming cancelled!')
         update_floating_window("LLM streaming cancelled!")
         vim.defer_fn(function()
           vim.api.nvim_win_close(win, true)
-        end, 750)
+        end, 2500)
         active_job = nil
       end
     end,
