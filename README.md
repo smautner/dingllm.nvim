@@ -1,149 +1,85 @@
-<img src="https://github.com/yacineMTB/dingllm.nvim/assets/10282244/d03ef83d-a5ee-4ddb-928f-742172f3c80c" alt="wordart (6)" style="width:200px;height:100px;">
 
 ### dingllm.nvim
-Yacine's no frills LLM nvim scripts. free yourself, brothers and sisters
 
-This is a really light config. I *will* be pushing breaking changes. I recommend reading the code and copying it over - it's really simple.
+My modified version of yacineMTB's [dingllm.nvim](https://github.com/yacineMTB/dingllm.nvim).
 
 https://github.com/yacineMTB/dingllm.nvim/assets/10282244/07cf5ace-7e01-46e3-bd2f-5bec3bb019cc
 
+How I use it:
 
-### Credits
-This extension woudln't exist if it weren't for https://github.com/melbaldove/llm.nvim
-
-I diff'd on a fork of it until it was basically a rewrite. Thanks @melbaldove!
-
-The main difference is that this uses events from plenary, rather than a timed async loop. I noticed that on some versions of nvim, melbaldove's extension would deadlock my editor. I suspected nio, so i just rewrote the extension. 
+* `<leader>k` - replace code in visual selection, following code comments.
+* `<leader>K` - read lines in buffer above cursor, answering questions.
 
 ### lazy config
 Add your API keys to your env (export it in zshrc or bashrc) 
 
 ```lua
-  {
-    'yacineMTB/dingllm.nvim',
-    dependencies = { 'nvim-lua/plenary.nvim' },
-    config = function()
-      local system_prompt =
-        'You should replace the code that you are sent, only following the comments. Do not talk at all. Only output valid code. Do not provide any backticks that surround the code. Never ever output backticks like this ```. Any comment that is asking you for something should be removed after you satisfy them. Other comments should left alone. Do not output backticks'
-      local helpful_prompt = 'You are a helpful assistant. What I have sent are my notes so far.'
-      local dingllm = require 'dingllm'
+    {
+        'spenserlee/dingllm.nvim',
+        dependencies = { 'nvim-lua/plenary.nvim' },
+        config = function()
+            local system_prompt = [[
+            You are an AI programming assistant integrated into a code editor. Your purpose is to help the user with programming tasks as they write code or answer questions.
+            Key capabilities:
+            - Thoroughly analyze the user's code and provide insightful suggestions for improvements related to best practices, performance, readability, and maintainability. Explain your reasoning.
+            - Answer coding questions in detail, using examples from the user's own code when relevant. Break down complex topics step- Spot potential bugs and logical errors. Alert the user and suggest fixes.
+            - Upon request, add helpful comments explaining complex or unclear code.
+            - Suggest relevant documentation, StackOverflow answers, and other resources related to the user's code and questions.
+            - Engage in back-and-forth conversations to understand the user's intent and provide the most helpful information.
+            - Consider other possibilities to achieve the result, do not be limited by the prompt.
+            - Keep concise and use markdown.
+            - When asked to create code, only generate the code. No bugs.
+            - Think step by step.
+            ]]
 
+            local replace_prompt = [[
+            You are an AI programming assistant integrated into a code editor.
+            Follow the instructions in the code comments.
+            Generate code only.
+            Do not output markdown backticks like this ```.
+            Think step by step.
+            If you must speak, do so in comments.
+            Generate valid code only.
+            ]]
 
-      local function handle_open_router_spec_data(data_stream)
-        local success, json = pcall(vim.json.decode, data_stream)
-        if success then
-          if json.choices and json.choices[1] and json.choices[1].text then
-            local content = json.choices[1].text
-            if content then
-              dingllm.write_string_at_cursor(content)
+            local dingllm = require('dingllm')
+            local release_url = 'https://generativelanguage.googleapis.com/v1/models'
+            -- local g_model = 'gemini-1.5-flash'
+            -- local g_model = 'gemini-1.5-pro'
+            local beta_url = 'https://generativelanguage.googleapis.com/v1beta/models'
+            -- local g_model = 'gemini-exp-1206'
+            local g_model = 'gemini-2.0-flash-exp'
+            local debug_path = '/tmp/dingllm_debug.log'
+
+            local function gemeni_replace()
+                dingllm.invoke_llm_and_stream_into_editor({
+                    url = beta_url,
+                    model = g_model,
+                    api_key_name = 'GEMINI_API_KEY',
+                    system_prompt = replace_prompt,
+                    replace = true,
+                    debug = false,
+                    debug_path = debug_path,
+                }, dingllm.make_gemini_spec_curl_args, dingllm.handle_gemini_spec_data)
             end
-          end
-        else
-          print("non json " .. data_stream)
-        end
-      end
 
-      local function custom_make_openai_spec_curl_args(opts, prompt)
-        local url = opts.url
-        local api_key = opts.api_key_name and os.getenv(opts.api_key_name)
-        local data = {
-          prompt = prompt,
-          model = opts.model,
-          temperature = 0.7,
-          stream = true,
-        }
-        local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
-        if api_key then
-          table.insert(args, '-H')
-          table.insert(args, 'Authorization: Bearer ' .. api_key)
-        end
-        table.insert(args, url)
-        return args
-      end
+            local function gemeni_help()
+                dingllm.invoke_llm_and_stream_into_editor({
+                    url = beta_url,
+                    model = g_model,
+                    api_key_name = 'GEMINI_API_KEY',
+                    system_prompt = system_prompt,
+                    replace = false,
+                    debug = false,
+                    debug_path = debug_path,
+                }, dingllm.make_gemini_spec_curl_args, dingllm.handle_gemini_spec_data)
+            end
 
-
-      local function llama_405b_base()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://openrouter.ai/api/v1/chat/completions',
-          model = 'meta-llama/llama-3.1-405b',
-          api_key_name = 'OPEN_ROUTER_API_KEY',
-          max_tokens = '128',
-          replace = false,
-        }, custom_make_openai_spec_curl_args, handle_open_router_spec_data)
-      end
-
-      local function groq_replace()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://api.groq.com/openai/v1/chat/completions',
-          model = 'llama-3.1-70b-versatile',
-          api_key_name = 'GROQ_API_KEY',
-          system_prompt = system_prompt,
-          replace = true,
-        }, dingllm.make_openai_spec_curl_args, dingllm.handle_openai_spec_data)
-      end
-
-      local function groq_help()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://api.groq.com/openai/v1/chat/completions',
-          model = 'llama-3.1-70b-versatile',
-          api_key_name = 'GROQ_API_KEY',
-          system_prompt = helpful_prompt,
-          replace = false,
-        }, dingllm.make_openai_spec_curl_args, dingllm.handle_openai_spec_data)
-      end
-
-      local function llama405b_replace()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://api.lambdalabs.com/v1/chat/completions',
-          model = 'hermes-3-llama-3.1-405b-fp8',
-          api_key_name = 'LAMBDA_API_KEY',
-          system_prompt = system_prompt,
-          replace = true,
-        }, dingllm.make_openai_spec_curl_args, dingllm.handle_openai_spec_data)
-      end
-
-      local function llama405b_help()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://api.lambdalabs.com/v1/chat/completions',
-          model = 'hermes-3-llama-3.1-405b-fp8',
-          api_key_name = 'LAMBDA_API_KEY',
-          system_prompt = helpful_prompt,
-          replace = false,
-        }, dingllm.make_openai_spec_curl_args, dingllm.handle_openai_spec_data)
-      end
-
-      local function anthropic_help()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://api.anthropic.com/v1/messages',
-          model = 'claude-3-5-sonnet-20240620',
-          api_key_name = 'ANTHROPIC_API_KEY',
-          system_prompt = helpful_prompt,
-          replace = false,
-        }, dingllm.make_anthropic_spec_curl_args, dingllm.handle_anthropic_spec_data)
-      end
-
-      local function anthropic_replace()
-        dingllm.invoke_llm_and_stream_into_editor({
-          url = 'https://api.anthropic.com/v1/messages',
-          model = 'claude-3-5-sonnet-20240620',
-          api_key_name = 'ANTHROPIC_API_KEY',
-          system_prompt = system_prompt,
-          replace = true,
-        }, dingllm.make_anthropic_spec_curl_args, dingllm.handle_anthropic_spec_data)
-      end
-
-      vim.keymap.set({ 'n', 'v' }, '<leader>k', groq_replace, { desc = 'llm groq' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>K', groq_help, { desc = 'llm groq_help' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>L', llama405b_help, { desc = 'llm llama405b_help' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>l', llama405b_replace, { desc = 'llm llama405b_replace' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>I', anthropic_help, { desc = 'llm anthropic_help' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>i', anthropic_replace, { desc = 'llm anthropic' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>o', llama_405b_base, { desc = 'llama base' })
-    end,
-  },
-
+            vim.keymap.set({ 'n', 'v' }, '<leader>k', gemeni_replace, { desc = 'llm gemeni' })
+            vim.keymap.set({ 'n', 'v' }, '<leader>K', gemeni_help, { desc = 'llm gemeni_help' })
+        end,
+    },
 ```
+### Credits
+This extension woudln't exist if it weren't for https://github.com/melbaldove/llm.nvim
 
-### Documentation
-
-read the code dummy
