@@ -116,9 +116,23 @@ end
 function M.write_string_at_extmark(str, extmark_id)
   vim.schedule(function()
     local extmark = vim.api.nvim_buf_get_extmark_by_id(0, ns_id, extmark_id, { details = false })
+    if not extmark then
+      -- Extmark might have been deleted, exit early
+      return
+    end
     local row, col = extmark[1], extmark[2]
 
-    vim.cmd 'undojoin'
+    -- Want to be able to remove all inserted text with single undo command, but
+    -- not supposed to call 'undojoin' in asyncronous callback.
+    local success, err = pcall(vim.cmd, 'undojoin')
+    if not success then
+      if err:match 'E790' then
+        print("Undojoin failed with E790, ignored")
+      else
+        print("Unexpected error...")
+      end
+    end
+
     local lines = vim.split(str, '\n')
     vim.api.nvim_buf_set_text(0, row, col, row, col, lines)
   end)
