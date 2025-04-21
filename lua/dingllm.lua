@@ -6,16 +6,15 @@ local function get_api_key(name)
   return os.getenv(name)
 end
 
-function M.get_lines_until_cursor()
-  local current_buffer = vim.api.nvim_get_current_buf()
-  local current_window = vim.api.nvim_get_current_win()
-  local cursor_position = vim.api.nvim_win_get_cursor(current_window)
-  local row = cursor_position[1]
 
-  local lines = vim.api.nvim_buf_get_lines(current_buffer, 0, row, true)
-
-  return table.concat(lines, '\n')
-end
+-- function M.get_lines_until_cursor()
+--   local current_buffer = vim.api.nvim_get_current_buf()
+--   local current_window = vim.api.nvim_get_current_win()
+--   local cursor_position = vim.api.nvim_win_get_cursor(current_window)
+--   local row = cursor_position[1]
+--   local lines = vim.api.nvim_buf_get_lines(current_buffer, 0, row, true)
+--   return table.concat(lines, '\n')
+-- end
 
 function M.get_visual_selection()
   local _, srow, scol = unpack(vim.fn.getpos 'v')
@@ -52,60 +51,98 @@ function M.get_visual_selection()
   end
 end
 
-function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
-  local url = opts.url
-  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-  local data = {
-    system = system_prompt,
-    messages = { { role = 'user', content = prompt } },
-    model = opts.model,
-    stream = true,
-    max_tokens = 4096,
-  }
-  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
-  if api_key then
-    table.insert(args, '-H')
-    table.insert(args, 'x-api-key: ' .. api_key)
-    table.insert(args, '-H')
-    table.insert(args, 'anthropic-version: 2023-06-01')
-  end
-  table.insert(args, url)
-  return args
+
+function M.get_entire_buffer_text()
+  local current_buffer = vim.api.nvim_get_current_buf()
+  -- Get all lines from 0 to -1 (end of buffer), without trailing newline on last line
+  local lines = vim.api.nvim_buf_get_lines(current_buffer, 0, -1, false)
+  return table.concat(lines, '\n')
 end
 
-function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
-  local url = opts.url
-  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-  local data = {
-    messages = { { role = 'system', content = system_prompt }, { role = 'user', content = prompt } },
-    model = opts.model,
-    temperature = 0.7,
-    stream = true,
-  }
-  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
-  if api_key then
-    table.insert(args, '-H')
-    table.insert(args, 'Authorization: Bearer ' .. api_key)
-  end
-  table.insert(args, url)
-  return args
+function M.get_current_line_text()
+  local current_buffer = vim.api.nvim_get_current_buf()
+  local current_window = vim.api.nvim_get_current_win()
+  local cursor_position = vim.api.nvim_win_get_cursor(current_window)
+  local row = cursor_position[1]
+
+  -- Get just the current line (row-1 to row), without trailing newline
+  local lines = vim.api.nvim_buf_get_lines(current_buffer, row - 1, row, false)
+  -- nvim_buf_get_lines returns a table, even for a single line
+  return lines[1] or '' -- Return the line or an empty string if somehow the line is nil
 end
 
-function M.make_gemini_spec_curl_args(opts, prompt, system_prompt)
+
+-- function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
+--   local url = opts.url
+--   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+--   local data = {
+--     system = system_prompt,
+--     messages = { { role = 'user', content = prompt } },
+--     model = opts.model,
+--     stream = true,
+--     max_tokens = 4096,
+--   }
+--   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+--   if api_key then
+--     table.insert(args, '-H')
+--     table.insert(args, 'x-api-key: ' .. api_key)
+--     table.insert(args, '-H')
+--     table.insert(args, 'anthropic-version: 2023-06-01')
+--   end
+--   table.insert(args, url)
+--   return args
+-- end
+
+-- function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
+--   local url = opts.url
+--   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+--   local data = {
+--     messages = { { role = 'system', content = system_prompt }, { role = 'user', content = prompt } },
+--     model = opts.model,
+--     temperature = 0.7,
+--     stream = true,
+--   }
+--   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+--   if api_key then
+--     table.insert(args, '-H')
+--     table.insert(args, 'Authorization: Bearer ' .. api_key)
+--   end
+--   table.insert(args, url)
+--   return args
+-- end
+
+function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
   local url = opts.url .. "/" .. opts.model .. ":streamGenerateContent?alt=sse&key=" .. api_key
 
   local data = {
+
+
+	system_instruction = {
+      parts = { { text = system_prompt} },
+    },
     contents = {
+      -- User turn with multiple parts
       {
-        parts = { { text = system_prompt } },
-        role = "model",
-      },
-      {
-        parts = { { text = prompt } },
         role = "user",
+        parts = {
+          { text = context },
+          { text = prompt },
+        },
       },
     },
+
+    -- contents = {
+    --   {
+    --     parts = { { text = system_prompt } },
+    --     role = "model",
+    --   },
+    --   {
+    --     parts = { { text = prompt } },
+    --     role = "user",
+    --   },
+    -- },
+
   }
 
   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
@@ -156,11 +193,14 @@ local function get_prompt(opts)
       vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', false, true, true), 'nx', false)
     end
   else
-    prompt = M.get_lines_until_cursor()
+    prompt = M.get_current_line_text()
   end
 
   return prompt
 end
+
+
+
 
 function M.handle_anthropic_spec_data(data_stream, buf_id, extmark_id, event_state)
   if event_state == 'content_block_delta' then
@@ -182,6 +222,9 @@ function M.handle_openai_spec_data(data_stream, buf_id, extmark_id)
     end
   end
 end
+
+
+
 
 -- Discrete version:
 -- https://ai.google.dev/api/generate-content#v1beta.models.generateContent
@@ -220,11 +263,15 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
   vim.api.nvim_clear_autocmds { group = group }
   local prompt = get_prompt(opts)
   local system_prompt = opts.system_prompt or 'You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly'
-  local args = make_curl_args_fn(opts, prompt, system_prompt)
+  local context = M.get_entire_buffer_text()
+  local args = make_curl_args_fn(opts, prompt, system_prompt, context)
   local curr_event_state = nil
   local buf_id = vim.api.nvim_get_current_buf()
   local crow, _ = unpack(vim.api.nvim_win_get_cursor(0))
   local stream_end_extmark_id = vim.api.nvim_buf_set_extmark(buf_id, ns_id, crow - 1, -1, {})
+
+  -- a few newlines, we dont want it to start writing in the current line
+  M.write_string_at_extmark("\n\n", buf_id, stream_end_extmark_id)
 
 
   -- setup a floating window to show status of LLM request
@@ -335,3 +382,4 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 end
 
 return M
+
