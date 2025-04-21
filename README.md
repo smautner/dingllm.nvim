@@ -1,21 +1,14 @@
 
 ### dingllm.nvim
 
-My modified version of yacineMTB's [dingllm.nvim](https://github.com/yacineMTB/dingllm.nvim).
-
-https://github.com/user-attachments/assets/5a840f01-f5ae-41f9-b59f-365e924e1da8
-
-How I use it:
-
-* `<leader>k` - replace code in visual selection, following code comments.
-* `<leader>K` - read lines in buffer above cursor, answering questions.
+modified from https://github.com/spenserlee/dingllm.nvim
 
 ### lazy config
 Add your API keys to your env (export it in zshrc or bashrc) 
 
 ```lua
     {
-        'spenserlee/dingllm.nvim',
+        'smautner/dingllm.nvim',
         dependencies = { 'nvim-lua/plenary.nvim' },
         config = function()
             local system_prompt = [[
@@ -82,4 +75,6 @@ Add your API keys to your env (export it in zshrc or bashrc)
 ```
 ### Credits
 This extension woudln't exist if it weren't for https://github.com/melbaldove/llm.nvim
+and https://github.com/yacineMTB/dingllm.nvim
+and https://github.com/spenserlee/dingllm.nvim
 
