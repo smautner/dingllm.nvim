@@ -5,7 +5,7 @@ modified from https://github.com/spenserlee/dingllm.nvim
 
 - we sent the whole current file as context
 - either the current line or visual selection is sent as prompt
-- disabled openai and anthropic as i don't use them
+- disabled openai as i don't use it
 - make_X_spec_curl_args would have to be adjusted according to the changes in gemini
 
 ### lazy config

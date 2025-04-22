@@ -72,26 +72,31 @@ function M.get_current_line_text()
 end
 
 
--- function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
---   local url = opts.url
---   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
---   local data = {
---     system = system_prompt,
---     messages = { { role = 'user', content = prompt } },
---     model = opts.model,
---     stream = true,
---     max_tokens = 4096,
---   }
---   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
---   if api_key then
---     table.insert(args, '-H')
---     table.insert(args, 'x-api-key: ' .. api_key)
---     table.insert(args, '-H')
---     table.insert(args, 'anthropic-version: 2023-06-01')
---   end
---   table.insert(args, url)
---   return args
--- end
+local preprompt = '### YOU ARE INTERACTING HERE IN THE CONTEXT ###'
+
+function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt, context)
+  local url = opts.url
+  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+  local data = {
+    system = system_prompt,
+    messages = {
+			{ role = 'user', content = context },
+			{ role = 'user', content = preprompt .. prompt }
+		},
+    model = opts.model,
+    stream = true,
+    max_tokens = 4096,
+  }
+  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+  if api_key then
+    table.insert(args, '-H')
+    table.insert(args, 'x-api-key: ' .. api_key)
+    table.insert(args, '-H')
+    table.insert(args, 'anthropic-version: 2023-06-01')
+  end
+  table.insert(args, url)
+  return args
+end
 
 -- function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 --   local url = opts.url
@@ -114,7 +119,6 @@ end
 function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
   local url = opts.url .. "/" .. opts.model .. ":streamGenerateContent?alt=sse&key=" .. api_key
-
   local data = {
 
 
@@ -127,7 +131,7 @@ function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
         role = "user",
         parts = {
           { text = context },
-          { text = prompt },
+          { text = preprompt .. prompt },
         },
       },
     },
@@ -271,7 +275,9 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
   local stream_end_extmark_id = vim.api.nvim_buf_set_extmark(buf_id, ns_id, crow - 1, -1, {})
 
   -- a few newlines, we dont want it to start writing in the current line
-  M.write_string_at_extmark("\n\n", buf_id, stream_end_extmark_id)
+  if not opts.replace then
+		M.write_string_at_extmark("\n\n", buf_id, stream_end_extmark_id)
+  end
 
 
   -- setup a floating window to show status of LLM request
