@@ -368,22 +368,25 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 
   active_job:start()
 
-  vim.api.nvim_create_autocmd('User', {
-    group = group,
-    pattern = 'DING_LLM_Escape',
-    callback = function()
-      if active_job then
-        active_job:shutdown()
-        update_floating_window("LLM streaming cancelled!")
-        vim.defer_fn(function()
-          vim.api.nvim_win_close(win, true)
-        end, 2500)
-        active_job = nil
-      end
-    end,
-  })
+  -- dingllm automatically remaps <esc>, i dont like this at all, so i remove it
 
-  vim.api.nvim_set_keymap('n', '<Esc>', ':doautocmd User DING_LLM_Escape<CR>', { noremap = true, silent = true })
+  -- vim.api.nvim_create_autocmd('User', {
+  --   group = group,
+  --   pattern = 'DING_LLM_Escape',
+  --   callback = function()
+  --     if active_job then
+  --       active_job:shutdown()
+  --       update_floating_window("LLM streaming cancelled!")
+  --       vim.defer_fn(function()
+  --         vim.api.nvim_win_close(win, true)
+  --       end, 2500)
+  --       active_job = nil
+  --     end
+  --   end,
+  -- })
+  -- vim.api.nvim_set_keymap('n', '<Esc>', ':doautocmd User DING_LLM_Escape<CR>', { noremap = true, silent = true })
+
+
   return active_job
 end
 
