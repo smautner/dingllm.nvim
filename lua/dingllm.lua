@@ -135,8 +135,12 @@ function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
         },
       },
     },
-
-    -- contents = {
+	generationConfig = {
+		thinkingConfig = {
+		 thinkingBudget = 0
+		},
+	  },
+		-- contents = {
     --   {
     --     parts = { { text = system_prompt } },
     --     role = "model",
