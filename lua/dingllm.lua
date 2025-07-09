@@ -74,53 +74,12 @@ end
 
 local preprompt = '### YOU ARE INTERACTING HERE IN THE CONTEXT ###'
 
-function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt, context)
-  local url = opts.url
-  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-  local data = {
-    system = system_prompt,
-    messages = {
-			{ role = 'user', content = context },
-			{ role = 'user', content = preprompt .. prompt }
-		},
-    model = opts.model,
-    stream = true,
-    max_tokens = 4096,
-  }
-  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
-  if api_key then
-    table.insert(args, '-H')
-    table.insert(args, 'x-api-key: ' .. api_key)
-    table.insert(args, '-H')
-    table.insert(args, 'anthropic-version: 2023-06-01')
-  end
-  table.insert(args, url)
-  return args
-end
 
--- function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
---   local url = opts.url
---   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
---   local data = {
---     messages = { { role = 'system', content = system_prompt }, { role = 'user', content = prompt } },
---     model = opts.model,
---     temperature = 0.7,
---     stream = true,
---   }
---   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
---   if api_key then
---     table.insert(args, '-H')
---     table.insert(args, 'Authorization: Bearer ' .. api_key)
---   end
---   table.insert(args, url)
---   return args
--- end
 
 function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
   local url = opts.url .. "/" .. opts.model .. ":streamGenerateContent?alt=sse&key=" .. api_key
   local data = {
-
 
 	system_instruction = {
       parts = { { text = system_prompt} },
@@ -135,23 +94,15 @@ function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
         },
       },
     },
-	generationConfig = {
-		thinkingConfig = {
-		 thinkingBudget = 0
-		},
-	  },
-		-- contents = {
-    --   {
-    --     parts = { { text = system_prompt } },
-    --     role = "model",
-    --   },
-    --   {
-    --     parts = { { text = prompt } },
-    --     role = "user",
-    --   },
-    -- },
-
   }
+
+  if opts.think == false then
+	data.generationConfig = {
+		thinkingConfig = {
+		 thinkingBudget = 0,
+		},
+	  }
+  end
 
   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
   table.insert(args, url)
@@ -394,5 +345,47 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
   return active_job
 end
 
-return M
+function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt, context)
+  local url = opts.url
+  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+  local data = {
+    system = system_prompt,
+    messages = {
+			{ role = 'user', content = context },
+			{ role = 'user', content = preprompt .. prompt }
+		},
+    model = opts.model,
+    stream = true,
+    max_tokens = 4096,
+  }
+  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+  if api_key then
+    table.insert(args, '-H')
+    table.insert(args, 'x-api-key: ' .. api_key)
+    table.insert(args, '-H')
+    table.insert(args, 'anthropic-version: 2023-06-01')
+  end
+  table.insert(args, url)
+  return args
+end
 
+-- function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
+--   local url = opts.url
+--   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+--   local data = {
+--     messages = { { role = 'system', content = system_prompt }, { role = 'user', content = prompt } },
+--     model = opts.model,
+--     temperature = 0.7,
+--     stream = true,
+--   }
+--   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+--   if api_key then
+--     table.insert(args, '-H')
+--     table.insert(args, 'Authorization: Bearer ' .. api_key)
+--   end
+--   table.insert(args, url)
+--   return args
+-- end
+--
+
+return M

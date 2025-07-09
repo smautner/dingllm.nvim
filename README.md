@@ -57,6 +57,7 @@ Add your API keys to your env (export it in zshrc or bashrc)
                     api_key_name = 'GEMINI_API_KEY',
                     system_prompt = replace_prompt,
                     replace = true,
+                    think = false,
                     debug = false,
                     debug_path = debug_path,
                 }, dingllm.make_gemini_spec_curl_args, dingllm.handle_gemini_spec_data)
