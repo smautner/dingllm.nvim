@@ -52,11 +52,20 @@ function M.get_visual_selection()
 end
 
 
+-- function M.get_entire_buffer_text()
+--   local current_buffer = vim.api.nvim_get_current_buf()
+--   -- Get all lines from 0 to -1 (end of buffer), without trailing newline on last line
+--   local lines = vim.api.nvim_buf_get_lines(current_buffer, 0, -1, false)
+--   return table.concat(lines, '\n')
+-- end
+
+
 function M.get_entire_buffer_text()
   local current_buffer = vim.api.nvim_get_current_buf()
-  -- Get all lines from 0 to -1 (end of buffer), without trailing newline on last line
   local lines = vim.api.nvim_buf_get_lines(current_buffer, 0, -1, false)
-  return table.concat(lines, '\n')
+  local text = table.concat(lines, '\n')
+  text = text:gsub('<!--%s*.-%s*-->', '')
+  return text
 end
 
 function M.get_current_line_text()
