@@ -68,6 +68,65 @@ function M.get_entire_buffer_text()
   return text
 end
 
+
+
+function M.get_buffer_mark_prompt()
+
+  local current_buffer = vim.api.nvim_get_current_buf()
+  local all_lines = vim.api.nvim_buf_get_lines(current_buffer, 0, -1, false)
+
+  local cursor_row_1_indexed = vim.api.nvim_win_get_cursor(0)[1]
+
+  local mark_a_pos = vim.fn.getpos "'a"
+  local mark_b_pos = vim.fn.getpos "'b"
+
+  local prompt_start_row_0_indexed
+  local prompt_end_row_0_indexed
+
+  -- Determine the start and end rows for the prompt
+  local a_is_set = mark_a_pos[2] ~= 0 and mark_a_pos[1] == current_buffer
+  local b_is_set = mark_b_pos[2] ~= 0 and mark_b_pos[1] == current_buffer
+
+  if a_is_set and b_is_set then
+    prompt_start_row_0_indexed = math.min(mark_a_pos[2], mark_b_pos[2]) - 1
+    prompt_end_row_0_indexed = math.max(mark_a_pos[2], mark_b_pos[2]) - 1
+  elseif a_is_set then
+    prompt_start_row_0_indexed = mark_a_pos[2] - 1
+    prompt_end_row_0_indexed = cursor_row_1_indexed - 1
+  elseif b_is_set then
+    prompt_start_row_0_indexed = cursor_row_1_indexed - 1
+    prompt_end_row_0_indexed = mark_b_pos[2] - 1
+  else
+    -- If no marks, use the current line as the prompt
+    prompt_start_row_0_indexed = cursor_row_1_indexed - 1
+    prompt_end_row_0_indexed = cursor_row_1_indexed - 1
+  end
+
+  local modified_lines = {}
+  for i, line in ipairs(all_lines) do
+    local current_line_0_indexed = i - 1
+    local processed_line = line
+
+    if current_line_0_indexed == prompt_start_row_0_indexed then
+      processed_line = '[PROMPT]' .. processed_line
+    end
+    if current_line_0_indexed == prompt_end_row_0_indexed then
+      processed_line = processed_line .. '[END OF PROMPT]'
+    end
+    table.insert(modified_lines, processed_line)
+  end
+
+  text = table.concat(modified_lines, '\n')
+  text = text:gsub('<!--%s*.-%s*-->', '')
+  return text
+end
+
+
+
+
+
+
+
 function M.get_current_line_text()
   local current_buffer = vim.api.nvim_get_current_buf()
   local current_window = vim.api.nvim_get_current_win()
@@ -99,7 +158,7 @@ function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
         role = "user",
         parts = {
           { text = context },
-          { text = preprompt .. prompt },
+          --{ text = preprompt .. prompt },
         },
       },
     },
@@ -227,11 +286,30 @@ local function debug_write(opts, message)
   end
 end
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
   vim.api.nvim_clear_autocmds { group = group }
+
   local prompt = get_prompt(opts)
   local system_prompt = opts.system_prompt or 'You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly'
-  local context = M.get_entire_buffer_text()
+  -- local context = M.get_entire_buffer_text()
+  local context = M.get_buffer_mark_prompt()
+
+
   local args = make_curl_args_fn(opts, prompt, system_prompt, context)
   local curr_event_state = nil
   local buf_id = vim.api.nvim_get_current_buf()
