@@ -123,10 +123,6 @@ end
 
 
 
-
-
-
-
 function M.get_current_line_text()
   local current_buffer = vim.api.nvim_get_current_buf()
   local current_window = vim.api.nvim_get_current_win()
@@ -176,6 +172,38 @@ function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
   table.insert(args, url)
   return args
 end
+
+
+
+function M.make_MIMO_spec_curl_args(opts, prompt, system_prompt, context)
+  local url = opts.url
+  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+  local data = {
+    model = opts.model,
+    messages = {
+      { role = 'system', content = system_prompt },
+      { role = 'user', content = context .. '\n' .. prompt },
+    },
+    stream = false,
+    temperature = opts.temperature or 0.3,
+    top_p = opts.top_p or 0.95,
+    max_completion_tokens = opts.max_tokens or 1024,
+    thinking = {
+      type = opts.think == false and "disabled" or "enabled"
+    }
+  }
+  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+  table.insert(args, '-H')
+  table.insert(args, 'api-key: ' .. api_key)
+  table.insert(args, url)
+  return args
+end
+
+
+
+
+
+
 
 function M.write_string_at_extmark(str, buf_id, extmark_id)
   vim.schedule(function()
@@ -271,6 +299,69 @@ function M.handle_gemini_spec_data(data_stream, buf_id, extmark_id)
   end
 end
 
+
+
+function M.handle_MIMO_spec_data(data_stream, buf_id, extmark_id)
+  if data_stream:match '"delta":' then
+  local success, json = pcall(vim.json.decode, data_stream)
+  if success and json.choices and json.choices[1] and json.choices[1].delta then
+    local content = json.choices[1].delta.content
+    if content then
+      M.write_string_at_extmark(content, buf_id, extmark_id)
+    end
+  end
+end
+
+
+local active_job = nil
+
+function M.invoke_llm(opts, make_curl_args, handle_data)
+  if active_job then
+    active_job:shutdown()
+  end
+
+  local buf_id = vim.api.nvim_get_current_buf()
+  local cursor_pos = vim.api.nvim_win_get_cursor(0)
+  local row, col = cursor_pos[1] - 1, cursor_pos[2]
+  local extmark_id = vim.api.nvim_buf_set_extmark(buf_id, ns_id, row, col, {})
+
+  local prompt = get_prompt(opts)
+  local system_prompt = opts.system_prompt or "You are a helpful assistant."
+  local context = M.get_buffer_mark_prompt()
+  local args = make_curl_args(opts, prompt, system_prompt, context)
+
+  active_job = Job:new {
+    command = 'curl',
+    args = args,
+    on_stdout = function(_, data)
+      if data:match 'data: ' then
+        local raw_json = data:gsub('^data: ', '')
+        if raw_json ~= '[DONE]' then
+          handle_data(raw_json, buf_id, extmark_id)
+        end
+      end
+    end,
+    on_exit = function()
+      active_job = nil
+    end,
+  }
+
+  active_job:start()
+    local json = vim.json.decode(data_stream)
+    if json.choices and json.choices[1] and json.choices[1].delta then
+      local content = json.choices[1].delta.content
+      if content then
+        M.write_string_at_extmark(content, buf_id, extmark_id)
+      end
+    end
+  end
+end
+
+
+
+
+
+
 local group = vim.api.nvim_create_augroup('DING_LLM_AutoGroup', { clear = true })
 local active_job = nil
 
@@ -290,13 +381,53 @@ end
 
 
 
+function M.invoke_llm_and_dump_into_editor(opts, make_curl_args_fn, handle_data_fn)
+	-- similar to stream into editors, just dumps the text, also ignores the replace flag, just adds 2 new lines below, sets the cursor there and dumps the content
 
+  if active_job then
+    active_job:shutdown()
+    active_job = nil
+  end
 
+  local prompt = get_prompt(opts)
+  local system_prompt = opts.system_prompt or "You are a helpful assistant."
+  local context = M.get_buffer_mark_prompt()
+  local buf_id = vim.api.nvim_get_current_buf()
+  local cursor_pos = vim.api.nvim_win_get_cursor(0)
+  local row = cursor_pos[1]
 
+  vim.api.nvim_buf_set_lines(buf_id, row, row, false, { "", "" })
+  local extmark_id = vim.api.nvim_buf_set_extmark(buf_id, ns_id, row + 1, 0, {})
+  vim.api.nvim_win_set_cursor(0, { row + 2, 0 })
 
+  local args = make_curl_args_fn(opts, prompt, system_prompt, context)
 
-
-
+  active_job = Job:new {
+     command = 'curl',
+    args = args,
+    on_exit = function(j, return_val)
+      if return_val == 0 then
+        local response = table.concat(j:result(), "\n")
+        local success, json = pcall(vim.json.decode, response)
+        if success then
+          local content = ""
+          if json.choices and json.choices[1] and json.choices[1].message then
+            content = json.choices[1].message.content
+          elseif json.candidates and json.candidates[1].content then
+            content = json.candidates[1].content.parts[1].text
+          elseif json.content and type(json.content) == "table" then
+            content = json.content[1].text
+          end
+          if content ~= "" then
+            M.write_string_at_extmark(content, buf_id, extmark_id)
+          end
+        end
+      end
+      active_job = nil
+    end,
+  }
+  active_job:start()
+end
 
 
 
@@ -431,6 +562,10 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 
   return active_job
 end
+
+
+
+
 
 function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt, context)
   local url = opts.url
