@@ -142,8 +142,10 @@ local preprompt = '### YOU ARE INTERACTING HERE IN THE CONTEXT ###'
 
 function M.make_gemini_spec_curl_args(opts, prompt, system_prompt, context)
   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-  local url = opts.url .. "/" .. opts.model .. ":streamGenerateContent?alt=sse&key=" .. api_key
+  local url = opts.url .. "/" .. opts.model .. ":generateContent?alt=sse&key=" .. api_key
   local data = {
+	-- make it give back the whole answer at once, no chunking
+
 
 	system_instruction = {
       parts = { { text = system_prompt} },
